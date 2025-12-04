@@ -14,28 +14,34 @@
 # limitations under the License.
 
 # Usage:
-#   bash change_billing_account.sh OLD_BILLING_ACCOUNT_ID NEW_BILLING_ACCOUNT_ID [PROJECT_ID_TO_SKIP...]
+#   bash change_billing_account.sh NEW_BILLING_ACCOUNT_ID CSV_FILE
 
-containsElement () {
-  local e match="$1"
-  shift
-  for e; do [[ "$e" == "$match" ]] && return 0; done
-  return 1
-}
+NEW_BILLING_ID=$1
+CSV_FILE=$2
 
-OLD_BILLING_ID=$1
-NEW_BILLING_ID=$2
-shift 2
-EXCEPTIONS=$@
+if [[ -z "$NEW_BILLING_ID" || -z "$CSV_FILE" ]]; then
+  echo "Usage: $0 NEW_BILLING_ACCOUNT_ID CSV_FILE"
+  exit 1
+fi
 
-PROJECTS=$(gcloud beta billing projects list --billing-account=${OLD_BILLING_ID} --format='value(projectId)')
+if [[ ! -f "$CSV_FILE" ]]; then
+    echo "File not found: $CSV_FILE"
+    exit 1
+fi
 
-for p in $PROJECTS; do
-  if containsElement $p ${EXCEPTIONS}; then
-    echo "Project $p in exception list, skipping."
-    continue
-  else
-    echo "Reassigning project $p billing acount from ${OLD_BILLING_ID} to ${NEW_BILLING_ID}"
-    gcloud beta billing projects link $p --billing-account=${NEW_BILLING_ID}
+while IFS="," read -r project_id rest || [ -n "$project_id" ]; do
+  # Clean up project_id (trim spaces)
+  project_id=$(echo "$project_id" | xargs)
+
+  # Skip header (simple check if first line is 'project_id')
+  if [[ "$project_id" == "project_id" ]]; then
+      continue
   fi
-done
+
+  if [[ -z "$project_id" ]]; then
+    continue
+  fi
+
+  echo "Reassigning project $project_id billing account to ${NEW_BILLING_ID}"
+  gcloud beta billing projects link "$project_id" --billing-account="${NEW_BILLING_ID}"
+done < "$CSV_FILE"
